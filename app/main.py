@@ -33,7 +33,8 @@ from fastapi.staticfiles import StaticFiles
 # from prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
 
 # Module Docker
-from .openai_service import create_completion, chatbot_completion
+from .openai_service import create_test_completion, chatbot_completion
+from .openai_assistant import assistant_setup
 from .post_data import ChatInput, ResponseSubject, PolicyViews
 # from .prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
 
@@ -56,6 +57,11 @@ templates = Jinja2Templates(directory="app/templates")
 subject = os.getenv("SUBJECT", "US Immigration Policy")
 political_leaning = os.getenv("POLITICAL_LEANING", "left")
 
+@app.on_event("startup")
+async def startup_event():
+    print("Starting application setup...")
+    assistant = await assistant_setup()  # This is your setup function that prepares the assistant
+    print("Application setup completed. Assistant id:", assistant.id)
 
 @app.get("/")
 async def index(request: Request):
@@ -119,7 +125,7 @@ async def index(request: Request):
         TemplateResponse: A TemplateResponse object that renders the "complete.html" template with dynamic output.
     """
     try:
-        completion = await create_completion(subject, political_leaning)
+        completion = await create_test_completion()
         if completion is not None:
             return templates.TemplateResponse(
                 "complete.html",

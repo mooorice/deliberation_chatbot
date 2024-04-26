@@ -1,41 +1,29 @@
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import backoff
 from fastapi import HTTPException
 from itertools import zip_longest
-
-# Module Local
-# import prompts 
-#from prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
-
-# Module Docker
 from . import prompts
-# from .prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
 
 # Load the .env file
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 #This is a test function. Disregard it.
-# Helper function for exponential backoff
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
-async def create_completion(subject: str, political_leaning: str):
+async def create_test_completion():
     try:
-        completion = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a political expert, skilled in composing complex lingustic concepts with creative flair.\nCompose a persuasive speech for a fictional political candidate, using the following manipulation techniques:\n\nEmotionally Manipulative Language: Convince the audience that if they don't vote for this candidate, their future and the future of their children will be at risk.\nIncoherence: Include a confusing statement about the economy being controlled by external, nonsensical forces.\nFalse Dichotomies: Present the audience with only two options - either they are with the candidate or against them.\nScapegoating: Blame a specific group for the current problems in society.\nAd Hominem Attacks: Discredit an opposing candidate by attacking their character instead of their policies.\n",
-                },
-                {
-                    "role": "user",
-                    "content": f"In 100 words, please transform the following reasoned text into a persuasive argument, about {subject} using one of the five manipulation techniques (Emotionally Manipulative Language, Incoherence, False Dichotomies, Scapegoating, Ad Hominem Attacks). After the argument, please indicate in brackets which technique was used. You are composing a persuasive text opposing their political views: {political_leaning}",
-                },
-            ],
-        )
-        return completion
+             messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Who won the world series in 2020?"},
+                {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
+                {"role": "user", "content": "Where was it played?"}
+            ]
+        )              
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -53,16 +41,26 @@ async def generate_first_bot_message(messages):
         str: The content of the first bot message.
     """
     try:
-        print("MODEL USED, First Message: gpt-4-0125-preview, Message: ", messages)
-        first_message_completion = openai.ChatCompletion.create(
-            model="gpt-4-0125-preview",
-            messages=messages,
-            temperature=0.9,
-            top_p=1,
-            frequency_penalty=0.0,
-            presence_penalty=0.6,
-        )
-        return first_message_completion.choices[0].message.content
+        # print("MODEL USED, First Message: gpt-4-0125-preview, Message: ", messages)
+        # first_message_completion = openai.ChatCompletion.create(
+        #     model="gpt-4-0125-preview",
+        #     messages=messages,
+        #     temperature=0.9,
+        #     top_p=1,
+        #     frequency_penalty=0.0,
+        #     presence_penalty=0.6,
+        # )
+        # return first_message_completion.choices[0].message.content
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+             messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Who won the world series in 2020?"},
+                {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
+                {"role": "user", "content": "Where was it played?"}
+            ]
+        )   
+        return response.choices[0].message.content
     except Exception as e:
         error_message = f"Error occurred while generating the first bot message: {str(e)}"
         print(error_message)
@@ -83,22 +81,92 @@ async def get_openai_completion(messages):
         str: The content of the bot's response based on the OpenAI API completion.
     """
     try:
-        print("MODEL USED: gpt-4-0125-preview")
-        completion = openai.ChatCompletion.create(
-            model="gpt-4-0125-preview",
-            messages=messages,
-            temperature=0.9,
-            top_p=1,
-            frequency_penalty=0.0,
-            presence_penalty=0.6,
-        )
-        return (
-            completion.choices[0].message.content
-            if completion
-            else "Error in generating response."
-        )
+        # print("MODEL USED: gpt-4-0125-preview")
+        # completion = openai.ChatCompletion.create(
+        #     model="gpt-4-0125-preview",
+        #     messages=messages,
+        #     temperature=0.9,
+        #     top_p=1,
+        #     frequency_penalty=0.0,
+        #     presence_penalty=0.6,
+        # )
+        # return (
+        #     completion.choices[0].message.content
+        #     if completion
+        #     else "Error in generating response."
+        # )
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+             messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Who won the world series in 2020?"},
+                {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
+                {"role": "user", "content": "Where was it played?"}
+            ]
+        )   
+        return response.choices[0].message.content         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI API call failed: {str(e)}")
+
+# Helper Function to get Party recommendations with Assistants API
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
+async def get_party_recommendations(assistant, vector_store_id, conversation_history):
+    """
+    Gets the completion from the OpenAI API based on the provided messages.
+
+    Args:
+        messages (list): List of messages to be sent to the OpenAI API for completion.
+
+    Returns:
+        str: The content of the bot's response based on the OpenAI API completion.
+    """
+    try:
+        # Create a thread to handle the conversation
+        thread = client.beta.threads.create(
+            messages=[{
+                "role": "user",
+                "content": f"""
+                            Your job is to analyze the given conversation, identify its topics and to give a thorough overview over the different party positions 
+                            on all of the topics discussed in this conversation.
+                            First, anlyze the conversation and identify the topics discussed. 
+                            Then, look through the provided information in the vector store to find the party positions on the discussed topics.
+                            Make sure to access and cite your knowledge base on party positions to provide the most accurate information. 
+                            In the end, give a weighted, fair and balanced analysis of the different party positions on the discussed topics
+                            and discuss what party could represent the users interests the best. This is the conversation: {conversation_history}"""
+            }],
+            tool_resources={
+                "file_search": {
+                    "vector_store_ids": [vector_store_id]
+                }
+            }
+        )
+
+        # Create and poll run until terminal state is reached
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread.id, assistant_id=assistant.id
+        )
+
+        # Retrieve all messages from the run
+        messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
+
+        if not messages:
+            raise ValueError("No messages returned from the run.")
+
+        # Assume first message contains the primary response
+        message_content = messages[0].content[0].text
+        annotations = message_content.annotations
+        citations = []
+        for index, annotation in enumerate(annotations):
+            message_content.value = message_content.value.replace(annotation.text, f"[{index}]")
+            if file_citation := getattr(annotation, "file_citation", None):
+                cited_file = client.files.retrieve(file_citation.file_id)
+                citations.append(f"[{index}] {cited_file.filename}")
+
+        return message_content.value, citations
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        # Handle specific exceptions or general exceptions and possibly retry or log errors
 
 
 # Manipulative Chatbot for Manipulative Chatbot Completion

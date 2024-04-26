@@ -159,7 +159,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-
 #Python Environment
 env_api/
 env.md
@@ -169,3 +168,7 @@ notes/qualtrics_AI_concept/notes_dump/
 
 #images 
 app/static/images/archive/
+
+#Personal Notes
+notes.md
+todos.md
