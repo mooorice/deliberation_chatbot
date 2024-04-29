@@ -334,3 +334,11 @@ async def get_processed_data():
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post('/get_party_recommendations', summary='Get party recommendations based on user input')
+async def get_party_recommendations(session_id: str = Form(...)):
+    session_data = sessions.get(session_id, {})
+    conversation_history = session_data.get('chat_history', [])
+    # Assuming 'assistant' and 'vector_store_id' are initialized during the app startup or available globally
+    recommendations, citations = await get_party_recommendations(assistant, vector_store_id, conversation_history)
+    return JSONResponse(content={'recommendations': recommendations, 'citations': citations})

@@ -24,7 +24,8 @@ async def create_assistant():
         print("Failed to create assistant:", e)
         raise HTTPException(status_code=500, detail=f"Failed to create assistant: {str(e)}")
 
-# Helper function to get an assistant, returns the ID of the Political Analyst Assistant if found and creates a new one if not found
+# Helper function to get an assistant, returns the ID of the Political Analyst Assistant if found 
+# Creates a new Political Analyst Assistant if not found
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
 async def get_assistant():
     try:

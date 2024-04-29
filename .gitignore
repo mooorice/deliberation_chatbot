@@ -170,5 +170,6 @@ notes/qualtrics_AI_concept/notes_dump/
 app/static/images/archive/
 
 #Personal Notes
-notes.md
-todos.md
+notes/notes.md
+notes/todos.md
+notes/open_questions.md
