@@ -1,48 +1,64 @@
 from fastapi import (
     FastAPI,
-    BackgroundTasks,
     HTTPException,
     Request,
-    Form,
-    Response,
-    Cookie,
     Depends,
     Body,
 )
-from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 import os
 import json
 import requests
 import openai
 from dotenv import load_dotenv
-import time
 import backoff
 from starlette.middleware.sessions import SessionMiddleware
-
-# from starlette.middleware.base import BaseHTTPMiddleware
-# from starlette.types import ASGIApp, Message, Receive, Scope, Send
+import logging
+from contextlib import asynccontextmanager
 from uuid import uuid4
 from fastapi.staticfiles import StaticFiles
 
-# import logging
-# Module Local
-# from openai_service import create_completion, chatbot_completion
-# from post_data import ChatInput
-# from prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
-
 # Module Docker
-from .openai_service import create_test_completion, chatbot_completion
-from .openai_assistant import assistant_setup
-from .post_data import ChatInput, ResponseSubject, PolicyViews
-# from .prompts import get_manipulative_prompt, get_reinforcing_prompt, get_reasoned_prompt, get_control_prompt
+from .openai_assistant import assistant_setup, create_conversation, chatbot_completion
+from .post_data import ChatInput
+
+import sys
+sys.path.append('/home/mo/code/deliberation_chatbot/app')
+from .log_config import setup_logging  # Ensures logging is configured
+import logging
+
+# This retrieves the root logger which was configured in log_config.py
+setup_logging()
+logger = logging.getLogger("machma_logger")
+
 
 # Load the .env file
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-app = FastAPI()
+assistant_dict = {}
+
+# On Startup
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # This happens just after starting the server
+    # We initialize the Assistants API here
+    assistant, vector_store = await assistant_setup() 
+    assistant_dict['assistant'] = assistant.id
+    assistant_dict['vector_store'] = vector_store.id
+    logger.info(f"Created Assistant with ID: {assistant_dict['assistant']} & Vector Store with ID: {assistant_dict['vector_store']}")
+    yield
+    # This happens just before shutting down the server
+    logger.info(f"Shutting down the server")
+
+app = FastAPI(lifespan=lifespan)
+
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
+@app.get("/")
+async def read_root():
+    logger.info("Root endpoint accessed.")
+    return {"Hello": "World"}
 
 # # Local File run
 # app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -52,17 +68,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-
-# Configuration variables
-subject = os.getenv("SUBJECT", "US Immigration Policy")
-political_leaning = os.getenv("POLITICAL_LEANING", "left")
-
-@app.on_event("startup")
-async def startup_event():
-    print("Starting application setup...")
-    assistant = await assistant_setup()  # This is your setup function that prepares the assistant
-    print("Application setup completed. Assistant id:", assistant.id)
-
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.get("/")
 async def index(request: Request):
     """
@@ -80,6 +86,7 @@ async def index(request: Request):
 
 
 # Create a hello get endpoint that returns a simple json key value pair
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.get("/hello")
 async def hello():
     """
@@ -88,9 +95,9 @@ async def hello():
     Returns:
         JSONResponse: The response containing the key value pair.
     """
-    return JSONResponse(content={"message": "Hello World"})
+    return JSONResponse(content={"message": "Hello, World!"})
 
-
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.get("/about", summary="Renders the about page.")
 async def about(request: Request):
     """
@@ -105,39 +112,6 @@ async def about(request: Request):
         TemplateResponse: A TemplateResponse object that renders the "about.html" template.
     """
     return templates.TemplateResponse("about.html", {"request": request})
-
-
-@app.get("/v2/complete", summary="Handles requests for an example text completion.")
-async def index(request: Request):
-    """
-    Handles requests for text completion.
-
-    This function takes a request object as a parameter and generates and displays relevant content based on user-defined subjects and political leanings.
-
-    Args:
-        request (Request): The request object containing information about the HTTP request.
-
-    Raises:
-        HTTPException: If there is an error during the completion generation process.
-        HTTPException: If the completion generation fails after multiple attempts.
-
-    Returns:
-        TemplateResponse: A TemplateResponse object that renders the "complete.html" template with dynamic output.
-    """
-    try:
-        completion = await create_test_completion()
-        if completion is not None:
-            return templates.TemplateResponse(
-                "complete.html",
-                {"request": request, "dynamic_output": completion.choices[0].message.content},
-            )
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to create completion after multiple attempts."
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 # Configure Session Middleware
 app.add_middleware(SessionMiddleware, secret_key="your-secret-key")
@@ -155,7 +129,7 @@ def get_session_id(request: Request):
             request.session["session_id"] = str(uuid4())
         return request.session["session_id"]
 
-
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)    
 @app.get("/chat", summary="Initialize or continue a chat session")
 async def get_chat(
     request: Request,
@@ -167,54 +141,16 @@ async def get_chat(
     responseSubjectPosition: str = "UA",
     responseChatpath: str = None,
     session_id: str = Depends(get_session_id),
-):
-    """
-    Initialize or continue a chat session, presenting the chat interface along with any existing chat history.
+):    
 
-    ### Parameters:
-    - `request`: The incoming request object from the client.
-    - `session_id`: Unique identifier for the chat session.
-    - `responseSchool` (optional): Context parameter related to a specific school.
-    - `responseLeaning` (optional): Indicates the response's leaning (e.g., positive, neutral, negative).
-    - `responseSubject` (optional): Specifies the chat's subject or topic.
-    - `responseChatpath` (optional): Determines the chatbot's response nature ('reasoned' or 'unreasoned').
-
-    ### Returns:
-    - `TemplateResponse`: Renders the chat interface with the current chat history based on the session data.
-
-    ### Raises:
-    - `HTTPException`: In case of errors in session management or chat history retrieval.
-
-    ### Notes:
-    - Chat history is cleared upon page refresh.
-    - Session management ensures continuity of the chat across requests.
-    """
-    # Clear chat history for the given session_id
-    # first_message = f"""Hello there! I'm a chatbot that can help you learn more about the topic of: <strong>{responseSubject}</strong>. What would you like to talk about?"""
-    print("All info queryparams: ", request.query_params)
-    
-    # Enum implementation for shorter query params
-    responseSubject = ResponseSubject[responseSubject].value
-    responseSubjectPosition = PolicyViews[responseSubjectPosition].value
-    print("Response Subject: ", responseSubject, " ", responseSubjectPosition)
-    # Implement first message to be sent from the Chatbot with an API call
-    # Generate the first bot message
-    conversation_context = {"user": [], "bot": []}  # Initial empty context
-    first_message = await chatbot_completion(
-    conversation_context, 
-    responseSchool, 
-    responseLeaning, 
-    responsePartyID, 
-    responsePolViews, 
-    responseSubject, 
-    responseSubjectPosition,
-    responseChatpath
-    )
-
-    
+    logger.info("assistant id: ", assistant_dict['assistant'])
+    logger.info("vector store id: ", assistant_dict['vector_store'])
+        
+    thread, run, first_message = await create_conversation(assistant_dict['assistant'], assistant_dict['vector_store'])  
     
     sessions[session_id] = {
         "chat_history": {"user": [], "bot": [first_message]},
+        "thread_id": thread.id,
         "responseSchool": responseSchool,
         "responseLeaning": responseLeaning,
         "responsePartyID": responsePartyID,
@@ -223,13 +159,13 @@ async def get_chat(
         "responseSubjectPosition": responseSubjectPosition,
         "responseChatpath": responseChatpath,
     }
-
-    print("SessionsID: ", session_id)
-    print("Session: ", sessions[session_id])
-    print("Subject: ", responseSubject, "& Subject Position: ", responseSubjectPosition)
-    print("Political Views: ", responsePolViews)
-    print("Chatpath: ", responseChatpath)
-
+    
+    logger.info(f"""Created Assistant with ID: {assistant_dict['assistant']} 
+                    & Vector Store with ID: {assistant_dict['vector_store']}
+                    & Thread with ID: {thread.id}
+                    & Run with ID: {run.id}
+                    First Message: {first_message}""")
+    
     return templates.TemplateResponse(
         "chat.html",
         {
@@ -240,11 +176,12 @@ async def get_chat(
         },
     )
 
-
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.post("/chat", summary="Processes user input in a chat session")
 async def post_chat(chat_input: ChatInput = Body(...)):
     """
-    Processes and responds to user input in a chat session. Handles storing the user's message, generating a bot response, and updating the chat history.
+    Processes and responds to user input in a chat session. Handles storing the user's message, 
+    generating a bot response, and updating the chat history.
 
     ### Parameters:
     - `chat_input`: A model that includes the user's input message and the session ID.
@@ -257,13 +194,16 @@ async def post_chat(chat_input: ChatInput = Body(...)):
     ### Raises:
     - `HTTPException`: In case of errors during the chatbot completion process.
     """
-
+    logger.debug("chat_input: ", chat_input)
+    logger.debug("chat_input.user_input: ", chat_input.user_input)
+    logger.debug("Session ID: ", chat_input.session_id)
+    logger.debug("Sessions: ", sessions)
+    logger.debug("particular Sessions: ", sessions[chat_input.session_id])
     user_input = chat_input.user_input
-    print("User Input: ", user_input)
     session_id = chat_input.session_id
 
     if session_id not in sessions:
-        print("Session ID not in sessions: ", session_id)
+        logger.info("Session ID not in sessions: ", session_id)
         sessions[session_id] = {
             "chat_history": {"user": [], "bot": []},
             "responseSchool": None,
@@ -280,19 +220,17 @@ async def post_chat(chat_input: ChatInput = Body(...)):
     # Append user message
     chat_history["user"].append(user_input)
     # chat_history.append(f"You: {user_input}")
-    print("Session Data in Post Request: ", session_data)
+    print("chat_history: ", chat_history)   
 
     try:
+        logger.debug("Calling Chatbot Completion now...")
         bot_response = await chatbot_completion(
-            chat_history,
-            session_data["responseSchool"],
-            session_data["responseLeaning"],
-            session_data["responsePartyID"],
-            session_data["responsePolViews"],
-            session_data["responseSubject"],
-            session_data["responseSubjectPosition"],
-            session_data["responseChatpath"]
+            chat_history["user"][-1],
+            assistant_dict['assistant'],
+            session_data["thread_id"],
         )
+        logger.debug("Bot Response: ", bot_response)
+        logger.info("Bot response: ", bot_response)
         
         # Append bot response
         chat_history["bot"].append(bot_response)
@@ -301,7 +239,6 @@ async def post_chat(chat_input: ChatInput = Body(...)):
         return JSONResponse(status_code=e.status_code, content={"message": e.detail})
 
     return JSONResponse(content={"chat_history": chat_history})
-
 
 # Function to retrieve data from JSON file
 async def get_data():
@@ -327,6 +264,7 @@ async def process_data():
 
 
 # Route to call functions and return response
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.get("/process_data")
 async def get_processed_data():
     try:
@@ -334,11 +272,3 @@ async def get_processed_data():
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post('/get_party_recommendations', summary='Get party recommendations based on user input')
-async def get_party_recommendations(session_id: str = Form(...)):
-    session_data = sessions.get(session_id, {})
-    conversation_history = session_data.get('chat_history', [])
-    # Assuming 'assistant' and 'vector_store_id' are initialized during the app startup or available globally
-    recommendations, citations = await get_party_recommendations(assistant, vector_store_id, conversation_history)
-    return JSONResponse(content={'recommendations': recommendations, 'citations': citations})

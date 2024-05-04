@@ -26,6 +26,9 @@
                         placeholder="Type your message..." required>
                     <div class="input-group-append">
                         <button type="submit" class="btn btn-success" id="sendButton">Send</button>
+                        <!-- <button type="submit" formaction="/get_party_recommendations" class="btn btn-info">
+                            Get Recommendations -->
+                        </button>
                     </div>
                 </div>
                 <p style="display: none;" id="paragraph">{{ session_id }}</p>
@@ -33,21 +36,20 @@
         </div>
 
         <script>
-            // New code to add the first message
             document.addEventListener('DOMContentLoaded', (event) => {
+                // Dynamically render the first message if it exists
                 if ({{ first_message | tojson | safe }}) {
                     addMessageToChat('Bot', {{ first_message | tojson | safe }});
                 }
             });
-
+                
             let botMessageCount = 0; // Counter for bot messages
-
+            
             const chatContainer = document.getElementById('chat-container');
             const chatForm = document.getElementById('chat-form');
             const userInputField = document.getElementById('user-input');
             const sessionParagraph = document.getElementById('paragraph');
-
-
+            
             chatForm.addEventListener('submit', function (event) {
                 event.preventDefault();
 
@@ -92,6 +94,65 @@
                         document.getElementById('sendButton').disabled = false;
                     });
             });
+
+            document.querySelector('[formaction="/get_party_recommendations"]').addEventListener('click', function(event) {
+                event.preventDefault(); // Prevent form submission
+                getPartyRecommendations();
+            });
+            
+            function sendChatMessage(userMessage) {
+                showLoadingIndicator();
+                document.getElementById('sendButton').disabled = true;
+            
+                fetch('/chat', {
+                    method: 'POST',
+                    body: JSON.stringify({ user_input: userMessage, session_id: sessionParagraph.innerText }),
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    updateChatHistory(data.chat_history);
+                    removeLoadingIndicator();
+                    botMessageCount++;
+            
+                    if (botMessageCount === 5) {
+                        setTimeout(() => {
+                            addMessageToChat("Bot", "We've reached our interaction limit. Thank you for the conversation!");
+                            removeLoadingIndicator();
+                            disableChatForm();
+                        }, 500);
+                    }
+                    document.getElementById('sendButton').disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('sendButton').disabled = false;
+                });
+            }
+
+            // function getPartyRecommendations() {
+            //     showLoadingIndicator();
+
+            //     // Send a POST request to the get_party_recommendations endpoint
+            //     fetch('/get_party_recommendations', {
+            //         method: 'POST',
+            //         body: JSON.stringify({ user_input: " ", session_id: sessionParagraph.innerText }),
+            //         headers: { 'Content-Type': 'application/json' }
+            //     })
+            //     .then(response => response.json())
+            //     .then(data => {
+            //         // Display the returned message from the server as a bot message
+            //         if (data.message) {
+            //             addMessageToChat('Bot', data.message);
+            //         }
+            //         removeLoadingIndicator();
+            //     })
+            //     .catch(error => {
+            //         console.error('Error:', error);
+            //         addMessageToChat('Bot', 'Failed to get recommendations. Please try again.');
+            //         removeLoadingIndicator();
+            //     });
+            // }
 
             function updateChatHistory(chatHistory) {
                 chatContainer.innerHTML = ''; // Clear existing messages
