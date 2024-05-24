@@ -19,55 +19,87 @@ logger = logging.getLogger("machma_logger")
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-system_prompt = """
-You're an AI political guide designed to engage in Socratic dialogue. Your goal is to help your discussion 
-partner in self-deliberation about their political opinions. Make sure not to nudge your partner into any 
-political direction but instead be curious and help them find out more deeply what beliefs and opinions they 
-hold and why that is.
+def get_political_conversation(gender, birth_year, school_education, vocational_education, occupation, interest_in_politics, political_concern, initial_reasoning):
+    logger.info("Political Concern:", political_concern)
+    system_prompt = f"""
+    Your discussion partner self identifies as
+    Gender: {gender}
+    Born in: {birth_year}
+    Their highest level of general school education ist: {school_education}
+    Their highest level of vocational training is: {vocational_education}
+    Their occupation is: {occupation}
 
-Begin the conversation with a greeting and and invitation to the discussion partner to share the political 
-topics that concern them the most. Prompt them to select one topic to delve into first.
+    Their interest in politics is: {interest_in_politics}
+    Their main political concern is: {political_concern}
+    And their initial reasoning on why he thinks it's important and how to solve it is: {initial_reasoning}
 
-Opening Inquiry: Start with an open-ended question to explore their initial thoughts about the chosen topic:
-'What concerns you most about this topic and why do you think it's important?'
+    Be friendly and introduce yourself.
+    Then, refer to their stated political opinion and ask questions that probe the logic and evidence behind their views.
+    Introduce counterpoints and allow them to reflect on and reformulate their opinion.
+    Use the information about party positions frequently to provide context, examples and party positions on the topic to your discussion partner.
+    Make sure to discuss in german.
+    """
 
-Deepening Understanding: Once they respond, guide them deeper into their reasoning. Ask questions that probe
-the logic and evidence behind their views: 'What makes you believe that this is the best approach? Can you 
-share examples or evidence that support your opinion?'
+    conversation_start = [{
+            "role": "user",
+            "content": system_prompt,
+        }]
+    return conversation_start
 
-Introducing Challenges: After understanding their argument, introduce a counterpoint or challenge to their 
-view to test the robustness of their reasoning: 'Have you considered [a specific contradiction or different 
-perspective]? How does this aspect affect your viewpoint?'
+def get_casual_conversation():
+    logger.info("Creating casual conversation")
+    system_prompt = f"""
+    Be friendly and introduce yourself. Have nice and fun conversation with your conversation partner. Ask about their day and interests. 
+    Share some fun facts or jokes and ask about their opinion on various topics.
+    Do not talk about politics, instead politely change the topic if it comes up.
+    Make sure to discuss in german and make sure not to overwhelm your discussion partner with too many questions or too much information. 
+    Limit yourself to at most 3 questions or statements at a time, preferably only 1 or 2.
+    """
 
-Reformulating Opinion: Encourage them to reflect on the counterpoint and adjust their opinion if necessary: 
-'Given this new information, how might you refine your perspective on [Topic]?'
+    conversation_start = [{
+            "role": "user",
+            "content": system_prompt,
+        }]
+    return conversation_start
 
-Continuation or Change: Before moving on, ask if they want to delve deeper into the same topic or switch to 
-another concern: 'Would you like to explore this topic further, or shall we discuss another one of your 
-concerns?'
-
-Repeat these steps for each topic they are concerned about. Once all topics are discussed, conclude by 
-asking if there are any additional topics they wish to explore or if they have any final thoughts to share.
-
-This approach ensures a thorough, reflective conversation, helping your discussion partner critically 
-examine and potentially broaden and deepen their political perspectives.
-"""
-
-
-conversation_start = [{
-        "role": "user",
-        "content": system_prompt,
-    }]
 
 # Helper function to create an assistant, if not found
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
-async def create_assistant():
+async def create_assistant(is_political):
+    if is_political:
+        name = "Socratic Assistant"
+        instructions = """You're an AI political guide designed to engage in a socratic maieutic dialogue. Your goal is to help your discussion 
+                            partner in self-deliberation about their political opinions. Make sure not to nudge your partner into any 
+                            political direction but instead be curious and help them find out more deeply what beliefs and opinions they 
+                            hold and why that is.
+                            You will be provided with some initial data about your discussion partner's sociodemographic background. You should astutely 
+                            use this information to adjust your conversation style and arguments
+                            to engage in a more personalized and effective discussion. However, you shall not mention explicitly any of 
+                            those sociodemographic characteristics regarding your opponent.
+                            You will also be provided with a the political topic that your discussion partner is most concerned about. 
+                            And their initial reasoning on why they think it's important and how to solve it. You should start the conversation by
+                            refering to this information and then ask follow up questions that probe the logic and evidence behind their views. 
+                            Introduce counterpoints and standpoints from political partys and allow them to reflect on and reformulate their opinion.
+                            Additionally you will have access to a vector store containing information about party positions on various topics.
+                            You should use this information frequently to provide context, examples and party positions on the topic to your discussion partner. 
+                            Do not mark your citations.
+                            Make sure to discuss in german and make sure not to overwhelm your discussion partner with too many questions or too much information.
+                            Limit yourself to at most 3 questions or statements at a time, preferably only 1 or 2.
+                            """
+    else:
+        name = "Casual Assistant"
+        instructions = """You're an AI designed to engage in casual conversation with your discussion partner. Your goal is to have a light-hearted 
+                            and fun conversation with your partner. Make sure to be friendly and introduce yourself. Ask about their day and interests. 
+                            Share some fun facts or jokes and ask about their opinion on various topics. Make sure to discuss in german and make sure 
+                            not to overwhelm your discussion partner with too many questions or too much information. Limit yourself to at most 3 questions 
+                            or statements at a time, preferably only 1 or 2.
+                            """    
     try:
         # Making a call to create an assistant
         assistant = client.beta.assistants.create(
-            name="Party Analyst Assistant",
-            instructions="You are an expert political analyst. Use your knowledge base to answer questions about party positions.",
-            model="gpt-4-turbo",
+            name=name,
+            instructions=instructions,
+            model="gpt-4o",
             tools=[{"type": "file_search"}],
         )
         logger.info(f"Assistant created with ID: {assistant.id}")
@@ -77,28 +109,51 @@ async def create_assistant():
         raise HTTPException(status_code=500, detail=f"Failed to create assistant: {str(e)}")
 
 # Helper function to get an assistant, returns the ID of the Political Analyst Assistant if found 
-# Creates a new Political Analyst Assistant if not found
+# Creates a new Political Assistant if not found
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
-async def get_assistant():
+async def get_political_assistant():
     try:
-        # Making a call to list assistantsassistant
+        # Making a call to list assistants
         response = client.beta.assistants.list()  # Fetching all the assistants
         if response and response.data:
             for assistant in response.data:
-                if assistant.name == "Party Analyst Assistant":
-                    logger.info("Party Analyst Assistant found.")
+                if assistant.name == "Socratic Assistant":
+                    logger.info("Socratic Assistant found.")
                     return assistant
             # If no assistant found in the loop, create a new one
-            logger.info("No Party Analyst Assistant found within, creating a new one...")
-            assistant = await create_assistant()
+            logger.info("No Socratic Assistant found within, creating a new one...")
+            assistant = await create_assistant(is_political=True)
             return assistant
         else:
             logger.info("No assistants or data available or failed to fetch data, attempting to create a new assistant.")
-            assistant = await create_assistant()
+            assistant = await create_assistant(is_political=True)
             return assistant
     except Exception as e:
         logger.info("Failed to fetch assistants:", e)
         raise HTTPException(status_code=500, detail=f"Failed to fetch assistants: {str(e)}")
+    
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
+async def get_casual_assistant():
+    try:
+        # Making a call to list assistants
+        response = client.beta.assistants.list()  # Fetching all the assistants
+        if response and response.data:
+            for assistant in response.data:
+                if assistant.name == "Casual Assistant":
+                    logger.info("Casual Assistant found.")
+                    return assistant
+            # If no assistant found in the loop, create a new one
+            logger.info("No Casual Assistant found within, creating a new one...")
+            assistant = await create_assistant(is_political=False)
+            return assistant
+        else:
+            logger.info("No assistants or data available or failed to fetch data, attempting to create a new assistant.")
+            assistant = await create_assistant(is_political=False)
+            return assistant
+    except Exception as e:
+        logger.info("Failed to fetch assistants:", e)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch assistants: {str(e)}")
+
 
 # Helper function to ensure the vector store is attached to the assistant
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
@@ -129,12 +184,13 @@ async def ensure_vector_store(assistant):
             # Create a new vector store if not found
             logger.info("Creating new vector store 'Party Positions'")
             vector_store = client.beta.vector_stores.create(name="Party Positions")
+            vector_store_id = vector_store.id
 
             # Upload files to the new vector store
             file_paths = ["data/party_positions.pdf"]
             file_streams = [open(path, "rb") for path in file_paths]
             file_batch = client.beta.vector_stores.file_batches.upload_and_poll(
-                vector_store_id=vector_store.id, files=file_streams
+                vector_store_id=vector_store_id, files=file_streams
             )
             logger.info(f"Files uploaded to vector store: {file_batch.status}")
 
@@ -152,18 +208,32 @@ async def ensure_vector_store(assistant):
     
 # Helper Function to create a new conversation thread
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
-async def create_conversation(assistant, vector_store):
+async def create_political_conversation(assistant, vector_store, gender, 
+                                                      birth_year, 
+                                                      school_education, 
+                                                      vocational_education, 
+                                                      occupation, 
+                                                      interest_in_politics, 
+                                                      political_concern, 
+                                                      initial_reasoning):
     try:
         # Create a new conversation thread
         thread = client.beta.threads.create(
-                            messages=conversation_start,
+                            messages=get_political_conversation(gender, 
+                                                      birth_year, 
+                                                      school_education, 
+                                                      vocational_education, 
+                                                      occupation, 
+                                                      interest_in_politics, 
+                                                      political_concern, 
+                                                      initial_reasoning),
                             tool_resources={
                                 "file_search": {
                                     "vector_store_ids": [vector_store]
                                 }
                             }
                         )
-        logger.info(f"Conversation thread created with ID: {thread.id}")
+        logger.info(f"Political conversation thread created with ID: {thread.id}")
         
         # Create and poll the run
         run = client.beta.threads.runs.create_and_poll(
@@ -171,23 +241,48 @@ async def create_conversation(assistant, vector_store):
         )
         response = client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id)
         first_message = response.data[0].content[0].text.value
-        logger.info(f"Conversation run created with ID: {run.id}")
+        logger.info(f"Political conversation run created with ID: {run.id}")
         return thread, run, first_message
     except Exception as e:
-        logger.error("Failed to create conversation:", e)
-        raise HTTPException(status_code=500, detail=f"Failed to create conversation: {str(e)}")
+        logger.error("Failed to create political conversation:", e)
+        raise HTTPException(status_code=500, detail=f"Failed to create political conversation: {str(e)}")
+    
+# Helper Function to create a new conversation thread
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)
+async def create_casual_conversation(assistant):
+    try:
+        # Create a new conversation thread
+        thread = client.beta.threads.create(
+                            messages=get_casual_conversation(),
+                            )
+        logger.info(f"Casual conversation thread created with ID: {thread.id}")
+        
+        # Create and poll the run
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread.id, assistant_id=assistant
+        )
+        response = client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id)
+        first_message = response.data[0].content[0].text.value
+        logger.info(f"Casual conversation run created with ID: {run.id}")
+        return thread, run, first_message
+    except Exception as e:
+        logger.error("Failed to create casual conversation:", e)
+        raise HTTPException(status_code=500, detail=f"Failed to create casual conversation: {str(e)}")
     
 # Main function to run the setup
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
 async def assistant_setup():
     try:
-        # Step 1: Get or create the assistant
-        assistant = await get_assistant()
+        # Step 1: Get or create the casual assistant
+        casual_assistant = await get_casual_assistant()
+        
+        # Step 2: Get or create the political assistant
+        political_assistant = await get_political_assistant()
 
         # Step 2: Ensure the assistant has the correct vector store attached
-        vector_store = await ensure_vector_store(assistant)
+        vector_store = await ensure_vector_store(political_assistant)
         
-        return assistant, vector_store
+        return casual_assistant, political_assistant, vector_store
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -200,12 +295,12 @@ async def chatbot_completion(
     assistant,
     thread,
     ):
-    logger.debug("chatbot completion called")
+    logger.debug("political chatbot completion called")
     logger.debug(user_message)
     logger.debug(assistant)
     logger.debug(thread)
     try:
-        logger.debug("chatbot completion try block starting...")
+        logger.debug("political chatbot completion try block starting...")
         # Create a message to append to our thread
         bot_message = client.beta.threads.messages.create(
             thread_id=thread, role='user', content=user_message)

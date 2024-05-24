@@ -20,7 +20,7 @@ from uuid import uuid4
 from fastapi.staticfiles import StaticFiles
 
 # Module Docker
-from .openai_assistant import assistant_setup, create_conversation, chatbot_completion
+from .openai_assistant import assistant_setup, create_political_conversation, create_casual_conversation, chatbot_completion
 from .post_data import ChatInput
 
 import sys
@@ -44,10 +44,13 @@ assistant_dict = {}
 async def lifespan(app: FastAPI):
     # This happens just after starting the server
     # We initialize the Assistants API here
-    assistant, vector_store = await assistant_setup() 
-    assistant_dict['assistant'] = assistant.id
+    casual_assistant, political_assistant, vector_store = await assistant_setup() 
+    assistant_dict['casual_assistant'] = casual_assistant.id
+    assistant_dict['political_assistant'] = political_assistant.id
     assistant_dict['vector_store'] = vector_store.id
-    logger.info(f"Created Assistant with ID: {assistant_dict['assistant']} & Vector Store with ID: {assistant_dict['vector_store']}")
+    logger.info(f"""Created Casual Assistant with ID: {assistant_dict['casual_assistant']}, 
+                Political Assistant with ID: {assistant_dict['political_assistant']} 
+                & Vector Store with ID: {assistant_dict['vector_store']}""")
     yield
     # This happens just before shutting down the server
     logger.info(f"Shutting down the server")
@@ -130,37 +133,48 @@ def get_session_id(request: Request):
         return request.session["session_id"]
 
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)    
-@app.get("/chat", summary="Initialize or continue a chat session")
+@app.get("/chat_pol", summary="Initialize or continue a political chat session")
 async def get_chat(
     request: Request,
-    responseSchool: str = None,
-    responseLeaning: int = None,
-    responsePartyID: str = None,
-    responsePolViews: str = None,
-    responseSubject: str = "CC",
-    responseSubjectPosition: str = "UA",
-    responseChatpath: str = None,
+    gender: str = 'male',
+    birth_year: int = '1995',
+    school_education: str = 'Abitur oder erweiterte Oberschule mit Abschluss 12. Klasse (Hochschulreife)',
+    vocational_education: str = 'Hochschulabschluss',
+    occupation: str = 'Student/in',
+    interest_in_politics: str = 'stark',
+    political_concern: str = 'Klimawandel',
+    initial_reasoning: str = 'Der Klimawandel gefährdet die Zukunft der Menschheit. Wir sollten zunnächst die co2 emissionen der reichsten vermindern.',
     session_id: str = Depends(get_session_id),
 ):    
 
-    logger.info("assistant id: ", assistant_dict['assistant'])
+    logger.info("assistant id: ", assistant_dict['political_assistant'])
     logger.info("vector store id: ", assistant_dict['vector_store'])
         
-    thread, run, first_message = await create_conversation(assistant_dict['assistant'], assistant_dict['vector_store'])  
+    thread, run, first_message = await create_political_conversation(assistant_dict['political_assistant'], assistant_dict['vector_store'], 
+                                                      gender, 
+                                                      birth_year, 
+                                                      school_education, 
+                                                      vocational_education, 
+                                                      occupation, 
+                                                      interest_in_politics, 
+                                                      political_concern, 
+                                                      initial_reasoning)  
     
     sessions[session_id] = {
         "chat_history": {"user": [], "bot": [first_message]},
         "thread_id": thread.id,
-        "responseSchool": responseSchool,
-        "responseLeaning": responseLeaning,
-        "responsePartyID": responsePartyID,
-        "responsePolViews": responsePolViews,
-        "responseSubject": responseSubject,
-        "responseSubjectPosition": responseSubjectPosition,
-        "responseChatpath": responseChatpath,
+        "gender": gender,
+        "birth_year": birth_year,
+        "school_education": school_education,
+        "vocational_education": vocational_education,
+        "occupation": occupation,
+        "interest_in_politics": interest_in_politics,
+        "political_concern": political_concern,
+        "initial_reasoning": initial_reasoning,
+        "is_political": True,
     }
     
-    logger.info(f"""Created Assistant with ID: {assistant_dict['assistant']} 
+    logger.info(f"""Created Assistant with ID: {assistant_dict['political_assistant']} 
                     & Vector Store with ID: {assistant_dict['vector_store']}
                     & Thread with ID: {thread.id}
                     & Run with ID: {run.id}
@@ -176,8 +190,39 @@ async def get_chat(
         },
     )
 
+@backoff.on_exception(backoff.expo, Exception, max_tries=5)    
+@app.get("/chat_cas", summary="Initialize or continue a casual chat session")
+async def get_chat(request: Request,
+                   session_id: str = Depends(get_session_id)):
+    
+    logger.info("casual assistant id: ", assistant_dict['casual_assistant'])
+
+    
+    thread, run, first_message = await create_casual_conversation(assistant_dict['casual_assistant'])
+    
+    sessions[session_id] = {
+        "chat_history": {"user": [], "bot": [first_message]},
+        "thread_id": thread.id,
+        "is_political": False,
+    }
+    
+    logger.info(f"""Created Assistant with ID: {assistant_dict['casual_assistant']} 
+                    & Thread with ID: {thread.id}
+                    & Run with ID: {run.id}
+                    First Message: {first_message}""")
+    
+    return templates.TemplateResponse(
+        "chat.html",
+        {
+            "request": request,
+            "chat_history": sessions[session_id],
+            "session_id": session_id,
+            "first_message": first_message,
+        },
+    )
+
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
-@app.post("/chat", summary="Processes user input in a chat session")
+@app.post("/chat", summary="Processes user input in a political chat session")
 async def post_chat(chat_input: ChatInput = Body(...)):
     """
     Processes and responds to user input in a chat session. Handles storing the user's message, 
@@ -203,30 +248,19 @@ async def post_chat(chat_input: ChatInput = Body(...)):
     session_id = chat_input.session_id
 
     if session_id not in sessions:
-        logger.info("Session ID not in sessions: ", session_id)
-        sessions[session_id] = {
-            "chat_history": {"user": [], "bot": []},
-            "responseSchool": None,
-            "responseLeaning": None,
-            "responsePartyID": None,
-            "responsePolViews": None,
-            "responseSubject": None,
-            "responseSubjectPosition": None,
-            "responseChatpath": None,
-        }
+        logger.error("Session ID not in sessions: ", session_id)
+        return JSONResponse(status_code=404, content={"message": "Session ID not found."})
 
     session_data = sessions[session_id]
     chat_history = session_data["chat_history"]
     # Append user message
     chat_history["user"].append(user_input)
-    # chat_history.append(f"You: {user_input}")
-    print("chat_history: ", chat_history)   
 
     try:
         logger.debug("Calling Chatbot Completion now...")
         bot_response = await chatbot_completion(
             chat_history["user"][-1],
-            assistant_dict['assistant'],
+            assistant_dict['political_assistant'],
             session_data["thread_id"],
         )
         logger.debug("Bot Response: ", bot_response)
