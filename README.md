@@ -1,62 +1,30 @@
 # Qualtrics AI API
 
 ## Description
-Qualtrics AI API is a powerful tool designed to generate dynamic chatbot interactions. It leverages the power of AI to provide seamless and interactive communication experiences.
+The Deliberation Chatbot is an conversational AI system built using FastAPI. It is designed to engage users in meaningful dialogues, whether for thoughtful political discussions or light-hearted casual conversations. By leveraging OpenAI's API, the chatbot dynamically adapts its responses based on the user's inputs and session context, providing a personalized and engaging chat experience. The political assistant is designed to support users in self deliberation about political topics.
 
 ## Features
-- Dynamic chatbot interactions with FAST API
-- AI-powered question generation
-- Easy integration with existing systems
+- **Socratic Political Dialogue**: Engage users in thoughtful political discussions, helping them to reflect on and refine their opinions.
+- **Casual Conversations**: Provide users with a friendly and engaging chat experience on non-political topics.
+- **Dynamic Interaction**: Automatically adapts the conversation style based on user inputs and session data.
+- **Logging**: Captures detailed logs for monitoring and debugging.
+- **Scalable Architecture**: Modular design with routers to handle different parts of the application.
 
 ## Installation
-Pull the latest version of the Qualtrics AI API from the GitHub repository:
-
-## Usage
-
-### Example Interaction with Chatbot
-![Example Political Chatbot Interaction](app/static/images/usage_screenshots/example_chatbot_interaction.png) 
-
-
-### FastAPI
-FastAPI is a modern, fast (high-performance), web framework for building APIs with Python 3.6+ based on standard Python type hints. In the context of the Qualtrics AI API, FastAPI is used to create dynamic chatbot interactions.
-
-Key features of FastAPI that benefit the Qualtrics AI API include:
-
-- Fast: High performance allows for quick and efficient chatbot interactions.
-- Quick coding: The development of new chatbot features is expedited, increasing productivity.
-- Fewer bugs: The reduction of human-induced errors leads to more reliable chatbot interactions.
-- Intuitive: Great editor support and less time debugging means more time improving the chatbot experience.
-- Easy: FastAPI is easy to use and learn, allowing for quick adjustments and improvements to the chatbot.
-- Short: Minimized code duplication leads to a more streamlined and efficient chatbot.
-- Robust: The production-ready code and automatic interactive documentation make it easier to maintain and improve the chatbot.
-- Standards-based: FastAPI's compatibility with open standards for APIs ensures that the chatbot can easily integrate with other systems.
+Pull the latest version of the Deliberative Chatbot from the GitHub repository: https://github.com/mooorice/deliberation_chatbot
 
 ### Running the API
-To start the app, type in the following command in your terminal:
+To run the app locally, type in the following command in your terminal:
 ```bash
-uvicorn main:app --reload --port 8001 --timeout-keep-alive 20
+uvicorn app.main:app --reload --port 8001 --timeout-keep-alive 20
 ```
+Then access via http://127.0.0.1:8001
 
 ### Running the Docker Container
 
-To build the Docker container, type in the following command in your terminal:
-```bash
-docker build --pull --rm -f "Dockerfile" -t qualtricsaiapi:0.1.0 "."
-```
+Use 'docker build' to build the Docker container.
 
-To run the Docker container, type in the following command in your terminal:
-```bash
-docker run --rm -it -p 8003:8003/tcp qualtricsaiapi:0.1.0
-```
-
-### Cloudflare Tunnel For Testing
-Follow the instructions [here](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) to download a cloudflared lightweight daemon. Then, run the following command in your terminal:
-```bash
-cloudflared tunnel --url localhost:8003
-```
-
-This will create a secure tunnel to your localhost on port 8003. You can then use the URL provided by cloudflared to test the API.
-Be careful not to share this URL with anyone as it will allow them to access your localhost.
+Use 'docker run' to run the Docker container, type in the following command in your terminal:
 
 ## License
-Include information about the license here.
+This project is licensed under the MIT License. See the LICENSE file for details.
