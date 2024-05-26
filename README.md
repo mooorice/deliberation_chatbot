@@ -27,4 +27,4 @@ Use 'docker build' to build the Docker container.
 Use 'docker run' to run the Docker container, type in the following command in your terminal:
 
 ## License
-This project is licensed under the MIT License. See the LICENSE file for details.
+To be determined
