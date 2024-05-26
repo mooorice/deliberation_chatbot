@@ -1,0 +1,5 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/delibchatbot/delib-chatbot-0.1', '.']
+images:
+- 'gcr.io/delibchatbot/delib-chatbot-0.1'

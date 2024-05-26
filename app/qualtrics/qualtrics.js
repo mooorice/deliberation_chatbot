@@ -4,7 +4,7 @@ const embeddedDataTarget2 = 'bot';  // Name of the embedded data field for the b
 const embeddedConversation = 'conversation';
 
 // Only change this if you know what you're doing
-const chatbotUrl = 'https://qualtrics-ai-api-c5bg57d2aa-uc.a.run.app/chat'; // Chatbot URL
+const chatbotUrl = 'https://delib-chatbot-yphrwglega-od.a.run.app/chat_pol'; // Chatbot URL
 
 // Get the responses to the questions
 var sessionId = "${e://Field/SessionID}";

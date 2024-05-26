@@ -172,6 +172,7 @@ app/static/images/archive/
 #Personal Notes
 notes/notes.md
 notes/open_questions.md
+notes/
 
 #Log Files
 logs/

@@ -1,0 +1,90 @@
+<div id="chatbot-container"></div>
+<script>
+// Chatbot URL
+const chatbotUrl = 'https://delib-chatbot-yphrwglega-od.a.run.app/chat';
+
+// Get the embedded data values
+var sessionId = "${e://Field/SessionID}";
+var treatment = true;
+var gender = "${e://Field/Gender}";
+var birthYear = "${e://Field/BirthYear}";
+var schoolEducation = "${e://Field/SchoolEducation}";
+var vocationalEducation = "${e://Field/VocationalEducation}";
+var occupation = "${e://Field/Occupation}";
+var interestInPolitics = "${e://Field/InterestInPolitics}";
+var politicalConcern = "${e://Field/PoliticalConcern}";
+
+// Log the variables for debugging
+console.log("Session ID: ", sessionId);
+console.log("Treatment: ", treatment);
+console.log("Gender: ", gender);
+console.log("Birth Year: ", birthYear);
+console.log("School Education: ", schoolEducation);
+console.log("Vocational Education: ", vocationalEducation);
+console.log("Occupation: ", occupation);
+console.log("Interest in Politics: ", interestInPolitics);
+console.log("Political Concern: ", politicalConcern);
+
+// Create the URL with parameters
+var urlWithParameters = chatbotUrl +
+    '?session_id=' + encodeURIComponent(sessionId || '') +
+    '&treatment=' + encodeURIComponent(treatment || '') +
+    '&gender=' + encodeURIComponent(gender || '') +
+    '&birth_year=' + encodeURIComponent(birthYear || '') +
+    '&school_education=' + encodeURIComponent(schoolEducation || '') +
+    '&vocational_education=' + encodeURIComponent(vocationalEducation || '') +
+    '&occupation=' + encodeURIComponent(occupation || '') +
+    '&interest_in_politics=' + encodeURIComponent(interestInPolitics || '') +
+    '&political_concern=' + encodeURIComponent(politicalConcern || '');
+
+// Log the final URL for debugging
+console.log("URL with Parameters: ", urlWithParameters);
+
+Qualtrics.SurveyEngine.addOnload(function () {
+    // Create the iframe element
+    var el = document.createElement('iframe');
+
+    // Apply some default styles to the iframe
+    el.style.display = 'block';
+    el.style.margin = '0';
+    el.style.height = '100vh';
+    el.style.width = '100%';
+    el.style.border = 'none';
+
+    // Set the iframe's source to the chatbot URL
+    el.src = urlWithParameters;
+
+    // Set the iframe's ID to "ifr"
+    el.id = "ifr";
+
+    // Append the iframe element to the question element
+    document.getElementById('chatbot-container').appendChild(el);
+
+    // Add a listener for message events from the chatbot
+    window.addEventListener('message', receiveMessage);
+
+    // Hide the Next button
+    this.hideNextButton();
+});
+
+Qualtrics.SurveyEngine.addOnReady(function () {
+    /* Place your JavaScript here to run when the page is fully displayed */
+});
+
+Qualtrics.SurveyEngine.addOnUnload(function () {
+    // Remove the listener for message events from the chatbot
+    window.removeEventListener('message', receiveMessage);
+});
+
+function unhideNextButton() {
+    // Unhide the Next button
+    document.getElementById('NextButton').style.display = 'inline';
+}
+
+function receiveMessage(msg) {
+    if (msg.data == "conversation_end") {
+        // Unhide the Next button when the conversation ends
+        unhideNextButton();
+    }
+}
+</script>

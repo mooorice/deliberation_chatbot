@@ -18,6 +18,7 @@ import logging
 from contextlib import asynccontextmanager
 from uuid import uuid4
 from fastapi.staticfiles import StaticFiles
+import re
 
 # Module Docker
 from .openai_assistant import assistant_setup, create_political_conversation, create_casual_conversation, chatbot_completion
@@ -32,25 +33,26 @@ import logging
 setup_logging()
 logger = logging.getLogger("machma_logger")
 
-
 # Load the .env file
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# Initialize the Assistants Dictionary to store the assistant IDs
 assistant_dict = {}
 
 # On Startup
+# We initialize our Assistants and Vector store here
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # This happens just after starting the server
-    # We initialize the Assistants API here
     casual_assistant, political_assistant, vector_store = await assistant_setup() 
     assistant_dict['casual_assistant'] = casual_assistant.id
     assistant_dict['political_assistant'] = political_assistant.id
     assistant_dict['vector_store'] = vector_store.id
-    logger.info(f"""Created Casual Assistant with ID: {assistant_dict['casual_assistant']}, 
+    logger.info(f"""
+                Created Casual Assistant with ID: {assistant_dict['casual_assistant']}, 
                 Political Assistant with ID: {assistant_dict['political_assistant']} 
-                & Vector Store with ID: {assistant_dict['vector_store']}""")
+                & Vector Store with ID: {assistant_dict['vector_store']}
+                """)
     yield
     # This happens just before shutting down the server
     logger.info(f"Shutting down the server")
@@ -62,10 +64,6 @@ app = FastAPI(lifespan=lifespan)
 async def read_root():
     logger.info("Root endpoint accessed.")
     return {"Hello": "World"}
-
-# # Local File run
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-# templates = Jinja2Templates(directory="templates")
 
 # Docker File run
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -86,19 +84,6 @@ async def index(request: Request):
         TemplateResponse: The response containing the rendered "index.html" template.
     """
     return templates.TemplateResponse("index.html", {"request": request})
-
-
-# Create a hello get endpoint that returns a simple json key value pair
-@backoff.on_exception(backoff.expo, Exception, max_tries=5)
-@app.get("/hello")
-async def hello():
-    """
-    Simple get endpoint that returns a key value pair.
-
-    Returns:
-        JSONResponse: The response containing the key value pair.
-    """
-    return JSONResponse(content={"message": "Hello, World!"})
 
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.get("/about", summary="Renders the about page.")
@@ -121,10 +106,10 @@ app.add_middleware(SessionMiddleware, secret_key="your-secret-key")
 # In-memory session storage
 sessions = {}
 
-
+# Helper function to get the session ID from the query parameters or create a new session ID
 def get_session_id(request: Request):
-    print("Session Details: ", request.session)
-    print("Query Params: ", request.query_params)
+    logger.debug("Session Details: ", request.session)
+    logger.debug("Query Params: ", request.query_params)
     if "session_id" in request.query_params:
         return request.query_params["session_id"]
     else:
@@ -132,36 +117,55 @@ def get_session_id(request: Request):
             request.session["session_id"] = str(uuid4())
         return request.session["session_id"]
 
+# Create a chat endpoint that initializes a chat session
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)    
-@app.get("/chat_pol", summary="Initialize or continue a political chat session")
+@app.get("/chat", summary="Initialize or continue a political chat session")
 async def get_chat(
     request: Request,
+    session_id: str = Depends(get_session_id),
+    treatment: bool = True,
     gender: str = 'male',
     birth_year: int = '1995',
     school_education: str = 'Abitur oder erweiterte Oberschule mit Abschluss 12. Klasse (Hochschulreife)',
     vocational_education: str = 'Hochschulabschluss',
     occupation: str = 'Student/in',
     interest_in_politics: str = 'stark',
-    political_concern: str = 'Klimawandel',
-    initial_reasoning: str = 'Der Klimawandel gefährdet die Zukunft der Menschheit. Wir sollten zunnächst die co2 emissionen der reichsten vermindern.',
-    session_id: str = Depends(get_session_id),
-):    
-
-    logger.info("assistant id: ", assistant_dict['political_assistant'])
-    logger.info("vector store id: ", assistant_dict['vector_store'])
-        
-    thread, run, first_message = await create_political_conversation(assistant_dict['political_assistant'], assistant_dict['vector_store'], 
-                                                      gender, 
-                                                      birth_year, 
-                                                      school_education, 
-                                                      vocational_education, 
-                                                      occupation, 
-                                                      interest_in_politics, 
-                                                      political_concern, 
-                                                      initial_reasoning)  
+    political_concern: str = 'Die Schere zwischen Arm und Reich wird immer größer.',):    
+    """
+    Takes input from the user and initializes a chat session. The function creates a new chat session.
+    The chat session is created based on the treatment type. If the treatment type is set to True, the function
+    creates a political chat session. If the treatment type is set to False, the function creates a casual chat session.
     
+    ### Parameters:
+    - `request`: The HTTP request object.
+    - `session_id`: The unique identifier for the chat session.
+    - `treatment`: A boolean value that determines the type of chat session to create.
+    - socio-demographic and political information from the survey
+    
+    ### Returns:
+    - `TemplateResponse`: The response containing the rendered "chat.html" template.
+    """
+    
+    # Create a new chat session according to the treatment type
+    if not treatment:
+        thread, run, first_message = await create_casual_conversation(assistant_dict['casual_assistant'])
+    if treatment:
+        thread, run, first_message = await create_political_conversation(assistant_dict['political_assistant'], assistant_dict['vector_store'], 
+                                                        gender, 
+                                                        birth_year, 
+                                                        school_education, 
+                                                        vocational_education, 
+                                                        occupation, 
+                                                        interest_in_politics, 
+                                                        political_concern 
+                                                        )  
+        
+    logger.info("Chat session created on thread %s with run %s", thread.id, run.id)
+    
+    # Store the chat session data
     sessions[session_id] = {
         "chat_history": {"user": [], "bot": [first_message]},
+        "treatment": treatment,
         "thread_id": thread.id,
         "gender": gender,
         "birth_year": birth_year,
@@ -170,15 +174,7 @@ async def get_chat(
         "occupation": occupation,
         "interest_in_politics": interest_in_politics,
         "political_concern": political_concern,
-        "initial_reasoning": initial_reasoning,
-        "is_political": True,
-    }
-    
-    logger.info(f"""Created Assistant with ID: {assistant_dict['political_assistant']} 
-                    & Vector Store with ID: {assistant_dict['vector_store']}
-                    & Thread with ID: {thread.id}
-                    & Run with ID: {run.id}
-                    First Message: {first_message}""")
+        }
     
     return templates.TemplateResponse(
         "chat.html",
@@ -190,37 +186,7 @@ async def get_chat(
         },
     )
 
-@backoff.on_exception(backoff.expo, Exception, max_tries=5)    
-@app.get("/chat_cas", summary="Initialize or continue a casual chat session")
-async def get_chat(request: Request,
-                   session_id: str = Depends(get_session_id)):
-    
-    logger.info("casual assistant id: ", assistant_dict['casual_assistant'])
-
-    
-    thread, run, first_message = await create_casual_conversation(assistant_dict['casual_assistant'])
-    
-    sessions[session_id] = {
-        "chat_history": {"user": [], "bot": [first_message]},
-        "thread_id": thread.id,
-        "is_political": False,
-    }
-    
-    logger.info(f"""Created Assistant with ID: {assistant_dict['casual_assistant']} 
-                    & Thread with ID: {thread.id}
-                    & Run with ID: {run.id}
-                    First Message: {first_message}""")
-    
-    return templates.TemplateResponse(
-        "chat.html",
-        {
-            "request": request,
-            "chat_history": sessions[session_id],
-            "session_id": session_id,
-            "first_message": first_message,
-        },
-    )
-
+# Create a chat endpoint that continues a chat session
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
 @app.post("/chat", summary="Processes user input in a political chat session")
 async def post_chat(chat_input: ChatInput = Body(...)):
@@ -239,70 +205,49 @@ async def post_chat(chat_input: ChatInput = Body(...)):
     ### Raises:
     - `HTTPException`: In case of errors during the chatbot completion process.
     """
-    logger.debug("chat_input: ", chat_input)
-    logger.debug("chat_input.user_input: ", chat_input.user_input)
-    logger.debug("Session ID: ", chat_input.session_id)
-    logger.debug("Sessions: ", sessions)
-    logger.debug("particular Sessions: ", sessions[chat_input.session_id])
+    logger.debug("post endpoint reached")
+    logger.debug("chat_input: %s", chat_input)
+    logger.debug("chat_input.user_input: %s", chat_input.user_input)
+    logger.debug("Session ID: %s", chat_input.session_id)
+    logger.debug("Sessions: %s", sessions)
+    
     user_input = chat_input.user_input
     session_id = chat_input.session_id
 
     if session_id not in sessions:
-        logger.error("Session ID not in sessions: ", session_id)
+        logger.error("Session ID not in sessions: %s", session_id)
         return JSONResponse(status_code=404, content={"message": "Session ID not found."})
 
     session_data = sessions[session_id]
     chat_history = session_data["chat_history"]
+    
     # Append user message
     chat_history["user"].append(user_input)
 
-    try:
-        logger.debug("Calling Chatbot Completion now...")
+    try:        
+        # Determine which assistant to use based on session_data["treatment"]
+        assistant_type = assistant_dict['political_assistant'] if session_data["treatment"] else assistant_dict['casual_assistant']
+        
+        # Get response
         bot_response = await chatbot_completion(
             chat_history["user"][-1],
-            assistant_dict['political_assistant'],
+            assistant_type,
             session_data["thread_id"],
         )
-        logger.debug("Bot Response: ", bot_response)
-        logger.info("Bot response: ", bot_response)
+        logger.info("Bot response: %s", bot_response)
+        
+        # Remove all citation markings and the text in between from bot_response
+        bot_response_cleaned = re.sub(r'【[^】]*】', '', bot_response)
+
+        # Check if this is the 5th bot message and add thank you message
+        if len(chat_history['bot']) == 5: 
+            thank_you_message = "<p>Vielen Dank für diese spannende Unterhaltung! Sie können nun mit der Umfrage fortfahren. Wenn Sie möchten, können wir aber auch gerne noch weiter diskutieren."
+            bot_response_cleaned += " " + thank_you_message
         
         # Append bot response
-        chat_history["bot"].append(bot_response)
+        chat_history["bot"].append(bot_response_cleaned)
 
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content={"message": e.detail})
 
     return JSONResponse(content={"chat_history": chat_history})
-
-# Function to retrieve data from JSON file
-async def get_data():
-    with open("data/data.json") as f:
-        data = json.load(f)
-    return data
-
-
-# Function to send API request to external API
-async def send_api_request():
-    url = os.getenv("EXTERNAL_API_URL", "https://api.example.com/data")
-    response = requests.get(url)
-    return response.json()
-
-
-# Function to process data and return response
-async def process_data():
-    data = await get_data()
-    api_data = await send_api_request()
-    # Process data and create response
-    response = {"data": data, "api_data": api_data}
-    return response
-
-
-# Route to call functions and return response
-@backoff.on_exception(backoff.expo, Exception, max_tries=5)
-@app.get("/process_data")
-async def get_processed_data():
-    try:
-        response = await process_data()
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
