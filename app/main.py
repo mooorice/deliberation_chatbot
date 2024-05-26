@@ -124,13 +124,13 @@ async def get_chat(
     request: Request,
     session_id: str = Depends(get_session_id),
     treatment: bool = True,
-    gender: str = 'male',
-    birth_year: int = '1995',
-    school_education: str = 'Abitur oder erweiterte Oberschule mit Abschluss 12. Klasse (Hochschulreife)',
-    vocational_education: str = 'Hochschulabschluss',
-    occupation: str = 'Student/in',
-    interest_in_politics: str = 'stark',
-    political_concern: str = 'Die Schere zwischen Arm und Reich wird immer größer.',):    
+    gender: str = 'keine angabe',
+    birth_year: int = 'keine angabe',
+    school_education: str = 'keine angabe',
+    vocational_education: str = 'keine angabe',
+    occupation: str = 'keine angabe',
+    interest_in_politics: str = 'keine angabe',
+    political_concern: str = 'keine angabe',):    
     """
     Takes input from the user and initializes a chat session. The function creates a new chat session.
     The chat session is created based on the treatment type. If the treatment type is set to True, the function

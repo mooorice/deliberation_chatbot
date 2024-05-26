@@ -1,5 +1,3 @@
-// Add the following code to the HTML view of the Qualtrics question
-
 <div id="chatbot-container"></div>
 <script>
 // Chatbot URL
@@ -7,14 +5,14 @@ const chatbotUrl = 'https://delib-chatbot-yphrwglega-od.a.run.app/chat';
 
 // Get the embedded data values
 var sessionId = "${e://Field/SessionID}";
-var treatment = false; // Set to false for placebo treatment
-var gender = "${e://Field/Gender}";
-var birthYear = "${e://Field/BirthYear}";
-var schoolEducation = "${e://Field/SchoolEducation}";
-var vocationalEducation = "${e://Field/VocationalEducation}";
-var occupation = "${e://Field/Occupation}";
-var interestInPolitics = "${e://Field/InterestInPolitics}";
-var politicalConcern = "${e://Field/PoliticalConcern}";
+var treatment = true; // This should be a boolean value
+var gender = "male";
+var birthYear = "1991";
+var schoolEducation = "Abitur";
+var vocationalEducation = "Hochschule";
+var occupation = "Student";
+var interestInPolitics = "hoch";
+var politicalConcern = "$Gendergaga";
 
 // Log the variables for debugging
 console.log("Session ID: ", sessionId);

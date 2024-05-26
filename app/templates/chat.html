@@ -42,6 +42,8 @@
             }
         });
 
+        let botMessageCount = 0; // Counter for bot messages
+
         const chatContainer = document.getElementById('chat-container');
         const chatForm = document.getElementById('chat-form');
         const userInputField = document.getElementById('user-input');
@@ -84,6 +86,14 @@
                 .then(data => {
                     updateChatHistory(data.chat_history);
                     removeLoadingIndicator();
+
+                    botMessageCount++; // Increment bot message count
+                    if (botMessageCount === 5) {
+                        // Send a message to the parent window
+                        const message = { conversation_end: true };
+                        window.parent.postMessage("conversation_end", "*"); // End of conversation reached to Qualtrics
+                        console.log("Disable chat post message: ", message);
+                    }
 
                     // Re-enable the send button
                     document.getElementById('sendButton').disabled = false;
