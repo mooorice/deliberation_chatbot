@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 import re
 
 # Module Docker
-from .openai_assistant import assistant_setup, create_political_conversation, create_casual_conversation, chatbot_completion
+from .openai_assistant import assistant_setup, create_political_conversation, create_casual_conversation, create_question_thread, chatbot_completion
 from .post_data import ChatInput
 
 import sys
@@ -44,13 +44,17 @@ assistant_dict = {}
 # We initialize our Assistants and Vector store here
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    casual_assistant, political_assistant, vector_store = await assistant_setup() 
+    casual_assistant, political_assistant, question_assistant, vector_store = await assistant_setup() 
+    question_thread = await create_question_thread(question_assistant.id)
     assistant_dict['casual_assistant'] = casual_assistant.id
     assistant_dict['political_assistant'] = political_assistant.id
+    assistant_dict['question_assistant'] = question_assistant.id
+    assistant_dict['questions_thread_id'] = question_thread.id
     assistant_dict['vector_store'] = vector_store.id
     logger.info(f"""
-                Created Casual Assistant with ID: {assistant_dict['casual_assistant']}, 
-                Political Assistant with ID: {assistant_dict['political_assistant']} 
+                Created Political Assistant with ID: {assistant_dict['political_assistant']}, 
+                Casual Assistant with ID: {assistant_dict['casual_assistant']}, 
+                Question Assistant with ID: {assistant_dict['question_assistant']},
                 & Vector Store with ID: {assistant_dict['vector_store']}
                 """)
     yield
@@ -108,8 +112,8 @@ sessions = {}
 
 # Helper function to get the session ID from the query parameters or create a new session ID
 def get_session_id(request: Request):
-    logger.debug("Session Details: ", request.session)
-    logger.debug("Query Params: ", request.query_params)
+    logger.debug("Session Details: %s", request.session)
+    logger.debug("Query Params: %s", request.query_params)
     if "session_id" in request.query_params:
         return request.query_params["session_id"]
     else:
@@ -123,12 +127,11 @@ def get_session_id(request: Request):
 async def get_chat(
     request: Request,
     session_id: str = Depends(get_session_id),
-    treatment: bool = True,
+    treatment: bool = False,
     gender: str = 'keine angabe',
     birth_year: int = 'keine angabe',
     school_education: str = 'keine angabe',
     vocational_education: str = 'keine angabe',
-    occupation: str = 'keine angabe',
     interest_in_politics: str = 'keine angabe',
     political_concern: str = 'keine angabe',):    
     """
@@ -140,7 +143,8 @@ async def get_chat(
     - `request`: The HTTP request object.
     - `session_id`: The unique identifier for the chat session.
     - `treatment`: A boolean value that determines the type of chat session to create.
-    - socio-demographic and political information from the survey
+    - Socio-demographic and political information from the survey.
+    - Political_concern: The political concern of the user to be used in the political chat session.
     
     ### Returns:
     - `TemplateResponse`: The response containing the rendered "chat.html" template.
@@ -148,19 +152,18 @@ async def get_chat(
     
     # Create a new chat session according to the treatment type
     if not treatment:
-        thread, run, first_message = await create_casual_conversation(assistant_dict['casual_assistant'])
+        thread, first_message = await create_casual_conversation(assistant_dict['casual_assistant'])
     if treatment:
-        thread, run, first_message = await create_political_conversation(assistant_dict['political_assistant'], assistant_dict['vector_store'], 
+        thread, first_message = await create_political_conversation(assistant_dict['political_assistant'], assistant_dict['vector_store'], 
                                                         gender, 
                                                         birth_year, 
                                                         school_education, 
                                                         vocational_education, 
-                                                        occupation, 
                                                         interest_in_politics, 
                                                         political_concern 
                                                         )  
         
-    logger.info("Chat session created on thread %s with run %s", thread.id, run.id)
+    logger.info("Chat session created on thread %s", thread.id)
     
     # Store the chat session data
     sessions[session_id] = {
@@ -171,7 +174,6 @@ async def get_chat(
         "birth_year": birth_year,
         "school_education": school_education,
         "vocational_education": vocational_education,
-        "occupation": occupation,
         "interest_in_politics": interest_in_politics,
         "political_concern": political_concern,
         }
@@ -228,6 +230,7 @@ async def post_chat(chat_input: ChatInput = Body(...)):
         # Determine which assistant to use based on session_data["treatment"]
         assistant_type = assistant_dict['political_assistant'] if session_data["treatment"] else assistant_dict['casual_assistant']
         
+        logger.info("Message input: %s", chat_history["user"][-1])
         # Get response
         bot_response = await chatbot_completion(
             chat_history["user"][-1],
@@ -236,6 +239,13 @@ async def post_chat(chat_input: ChatInput = Body(...)):
         )
         logger.info("Bot response: %s", bot_response)
         
+        # short_response = await chatbot_completion(
+        #     bot_response,
+        #     assistant_dict["question_assistant"],
+        #     assistant_dict["questions_thread_id"],
+        # )
+        
+        logger.info("short response: %s", bot_response)
         # Remove all citation markings and the text in between from bot_response
         bot_response_cleaned = re.sub(r'【[^】]*】', '', bot_response)
 
