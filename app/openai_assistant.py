@@ -100,6 +100,27 @@ def get_question_conversation():
         }]
     return conversation_start
 
+# Helper function to create a question conversation
+def get_question_conversation():
+    """
+    Returns a conversation starter for a question discussion.
+    """
+    
+    logger.info("Creating question conversation...")
+    
+    system_prompt = f"""You're an AI designed to check the quality of the answers provided by another assistant.
+                            Your only job is to check that there is at most two questions in every message. 
+                            If there is more than two questions, pick the most critical questions or combine the questions to maximize stimulation of critical thinking.
+                            That is, to question the assumptions, evidence, and logic behind the question.
+                            Do not change the rest of the message. Never remove information that is not a question.
+    """
+
+    conversation_start = [{
+            "role": "user",
+            "content": system_prompt,
+        }]
+    return conversation_start
+
 
 # Helper function to create an assistant, if not found
 @backoff.on_exception(backoff.expo, Exception, max_tries=5)
